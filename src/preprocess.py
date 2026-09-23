@@ -36,7 +36,6 @@ FEATURE_COLS = [
     "delta_lat",
     "delta_lon",
     "circuity",
-    "quote_signal",
     "weight_per_mile",
     "dayofweek",
     "is_weekend",
@@ -44,10 +43,18 @@ FEATURE_COLS = [
     "weight_was_negative",
     "market_index_missing",
 ]
-# Computed but excluded from the model: in out-of-time backtests they roughly double
-# the error (MAE ~$62 vs ~$31). market_index swings 0.89-1.30 across the year while
-# rate per mile barely moves, so the model learns a relationship that does not hold
-# out of time. train.py re-runs this ablation so it can be reproduced.
+# Computed but excluded from the model (train.py re-runs both ablations every time):
+#
+# quote_signal switches regime month to month. In Jan/Feb/Mar/Jun/Sep it equals the true
+# rate per mile (corr +0.996, a label leak); in Apr/May/Jul/Oct it is its mirror image
+# (corr -0.99); in Aug it is pure noise (corr -0.02). In validation (Nov-Dec) it is also
+# noise: its correlation with distance is ~0, exactly like August and unlike every other
+# month (|corr| ~0.7). A model that uses it scores ~$30 MAE on leak months but ~$112 on
+# August, so it would fail on the real predictions.
+#
+# market_index swings 0.89-1.30 across the year while rate per mile barely moves, so the
+# model learns a relationship that does not hold out of time.
+QUOTE_COLS = ["quote_signal"]
 MARKET_COLS = ["market_index", "market_quote_prod"]
 EQUIPMENT_TYPES = ["Dry Van", "Flatbed", "Reefer"]
 
@@ -144,7 +151,7 @@ def preprocess_data(df: pd.DataFrame, ref: dict) -> pd.DataFrame:
     data["market_index_missing"] = data["market_index"].isna().astype(int)
     data["market_index"] = data["market_index"].fillna(_fill_market_index(data["date"], ref))
 
-    # Quote signal is mostly per-load noise, so a median is the neutral fill
+    # Quote signal is filled for completeness (ablation only; see QUOTE_COLS note above)
     if "quote_signal" not in data.columns:
         data["quote_signal"] = np.nan
     data["quote_signal"] = data["quote_signal"].fillna(ref["quote_signal_median"])

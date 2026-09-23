@@ -4,18 +4,22 @@ Run from the project root:
     python src/train.py
 
 Validation design
-
+-----------------
 Training data covers Jan-Oct 2025 and the final predictions are for Nov-Dec 2025,
-so validation must be out-of-time. We use an expanding-window backtest:
+so validation must be out-of-time. We use an expanding-window backtest over four months:
 
-    fold 1: train Jan-Aug  -> test Sep
-    fold 2: train Jan-Sep  -> test Oct
+    train Jan-Jun -> test Jul      train Jan-Jul -> test Aug
+    train Jan-Aug -> test Sep      train Jan-Sep -> test Oct
+
+August matters most: it is the only training month where quote_signal is pure noise,
+which is also true of the validation period (Nov-Dec). See preprocess.QUOTE_COLS.
 
 Models compared on the same folds (metrics on total rate in $):
     1. Naive baseline: median rate-per-mile per equipment x distance
     2. Ridge regression on rate per mile
-    3. LightGBM + market features (ablation: shows market_index hurts out of time)
-    4. LightGBM on rate per mile, weighted by distance so the loss matches $ error (final)
+    3. LightGBM + quote_signal   (ablation: great on leak months, fails on August)
+    4. LightGBM + market_index   (ablation: hurts out of time)
+    5. LightGBM on rate per mile, weighted by distance so the loss matches $ error (final)
 
 The best model is refit on all Jan-Oct data and saved to models/freight_model.pkl.
 """
@@ -32,13 +36,19 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from preprocess import FEATURE_COLS, MARKET_COLS, build_reference, filter_target_outliers, load_dataset, preprocess_data
+from preprocess import FEATURE_COLS, MARKET_COLS, QUOTE_COLS, build_reference, filter_target_outliers, load_dataset, preprocess_data
 
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_DIR = ROOT / "models"
 REPORT_DIR = ROOT / "reports"
 
-FOLDS = [("2025-09-01", "2025-10-01"), ("2025-10-01", "2025-11-01")]  # (test start, test end)
+FOLDS = [  # (test start, test end)
+    ("2025-07-01", "2025-08-01"),
+    ("2025-08-01", "2025-09-01"),
+    ("2025-09-01", "2025-10-01"),
+    ("2025-10-01", "2025-11-01"),
+]
+VALIDATION_LIKE_FOLD = "test 2025-08"
 
 LGB_PARAMS = dict(
     objective="huber",
@@ -93,17 +103,18 @@ def fit_lgb(X_tr, y_tr, w_tr, X_te=None, y_te=None, w_te=None, n_estimators=None
         params["n_estimators"] = n_estimators
     model = lgb.LGBMRegressor(**params)
     if X_te is not None:
-        model.fit(
-            X_tr, y_tr, sample_weight=w_tr,
-            eval_X=(X_te,), eval_y=(y_te,), eval_sample_weight=[w_te], eval_metric="l1",
-            callbacks=[lgb.early_stopping(200, verbose=False)],
-        )
+        common = dict(sample_weight=w_tr, eval_sample_weight=[w_te], eval_metric="l1",
+                      callbacks=[lgb.early_stopping(200, verbose=False)])
+        try:  # LightGBM >= 4.7 API
+            model.fit(X_tr, y_tr, eval_X=(X_te,), eval_y=(y_te,), **common)
+        except TypeError:  # older LightGBM
+            model.fit(X_tr, y_tr, eval_set=[(X_te, y_te)], **common)
     else:
         model.fit(X_tr, y_tr, sample_weight=w_tr)
     return model
 
 
-#  main
+# --------------------------------------------------------------------------- main
 def train_model() -> None:
     print("=== Loading and preprocessing ===")
     raw_train = filter_target_outliers(load_dataset("train_test"))
@@ -112,6 +123,7 @@ def train_model() -> None:
     data = preprocess_data(raw_train, ref).sort_values("date").reset_index(drop=True)
 
     X, y, dist = data[FEATURE_COLS], data["rate_per_mile"], data["distance"]
+    X_quote = data[FEATURE_COLS + QUOTE_COLS]
     X_mkt = data[FEATURE_COLS + MARKET_COLS]
     print(f"Rows after cleaning: {len(data):,}  |  features: {len(FEATURE_COLS)}")
 
@@ -125,6 +137,7 @@ def train_model() -> None:
 
         naive = NaiveBaseline().fit(X[tr], y[tr])
         ridge = make_ridge().fit(X[tr], y[tr], ridge__sample_weight=dist[tr])
+        lgbm_quote = fit_lgb(X_quote[tr], y[tr], dist[tr], X_quote[te], y[te], dist[te])
         lgbm_mkt = fit_lgb(X_mkt[tr], y[tr], dist[tr], X_mkt[te], y[te], dist[te])
         lgbm = fit_lgb(X[tr], y[tr], dist[tr], X[te], y[te], dist[te])
         best_iters.append(lgbm.best_iteration_)
@@ -132,6 +145,7 @@ def train_model() -> None:
         candidates = [
             ("Naive (equipment rpm)", naive, X),
             ("Ridge", ridge, X),
+            ("LightGBM + quote_signal", lgbm_quote, X_quote),
             ("LightGBM + market_index", lgbm_mkt, X_mkt),
             ("LightGBM (final)", lgbm, X),
         ]
@@ -139,13 +153,15 @@ def train_model() -> None:
             pred = model.predict(feats[te]) * dist[te]
             m = rate_metrics(actual, pred)
             results.append({"fold": label, "model": name, **m})
-            print(f"  {name:<22} MAE ${m['MAE']:8.2f}  RMSE ${m['RMSE']:8.2f}  MAPE {m['MAPE_%']:5.2f}%")
+            print(f"  {name:<25} MAE ${m['MAE']:8.2f}  RMSE ${m['RMSE']:8.2f}  MAPE {m['MAPE_%']:5.2f}%")
 
-    summary = pd.DataFrame(results).groupby("model", sort=False)[["MAE", "RMSE", "MAPE_%"]].mean()
-    print("\n=== Mean across folds ===")
+    res_df = pd.DataFrame(results)
+    summary = res_df.groupby("model", sort=False)[["MAE", "RMSE", "MAPE_%"]].mean()
+    summary["Aug_MAE"] = res_df[res_df["fold"] == VALIDATION_LIKE_FOLD].set_index("model")["MAE"]
+    print("\n=== Mean across folds (Aug_MAE = validation-like fold) ===")
     print(summary.round(2).to_string())
 
-    # Feature importance from the last fold's LightGBM (gain)
+    # Feature importance from the last fold's final-feature LightGBM (gain)
     importance = (
         pd.Series(lgbm.booster_.feature_importance("gain"), index=FEATURE_COLS)
         .sort_values(ascending=False)
@@ -155,7 +171,7 @@ def train_model() -> None:
     print(importance.to_string())
 
     # Refit on all Jan-Oct data with the averaged early-stopping round count
-    n_final = int(np.mean(best_iters) * 1.1)  # slightly more rounds: ~11% more data than fold 2
+    n_final = int(np.mean(best_iters) * 1.1)  # slightly more rounds: the final fit has more data than any fold
     print(f"\n=== Refitting LightGBM on all data ({n_final} trees) ===")
     final_model = fit_lgb(X, y, dist, n_estimators=n_final)
 
