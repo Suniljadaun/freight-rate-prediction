@@ -36,9 +36,7 @@ FEATURE_COLS = [
     "delta_lat",
     "delta_lon",
     "circuity",
-    "market_index",
     "quote_signal",
-    "market_quote_prod",
     "weight_per_mile",
     "dayofweek",
     "is_weekend",
@@ -46,6 +44,11 @@ FEATURE_COLS = [
     "weight_was_negative",
     "market_index_missing",
 ]
+# Computed but excluded from the model: in out-of-time backtests they roughly double
+# the error (MAE ~$62 vs ~$31). market_index swings 0.89-1.30 across the year while
+# rate per mile barely moves, so the model learns a relationship that does not hold
+# out of time. train.py re-runs this ablation so it can be reproduced.
+MARKET_COLS = ["market_index", "market_quote_prod"]
 EQUIPMENT_TYPES = ["Dry Van", "Flatbed", "Reefer"]
 
 

@@ -1,0 +1,106 @@
+{
+  "folds": [
+    {
+      "fold": "test 2025-09",
+      "model": "Naive (equipment rpm)",
+      "MAE": 177.84228955390736,
+      "RMSE": 260.0341559304924,
+      "MAPE_%": 8.091676596859344
+    },
+    {
+      "fold": "test 2025-09",
+      "model": "Ridge",
+      "MAE": 52.3317385593598,
+      "RMSE": 78.55295011026058,
+      "MAPE_%": 2.4249693778386
+    },
+    {
+      "fold": "test 2025-09",
+      "model": "LightGBM + market_index",
+      "MAE": 62.90352044720691,
+      "RMSE": 90.7381127276397,
+      "MAPE_%": 2.8021889138619596
+    },
+    {
+      "fold": "test 2025-09",
+      "model": "LightGBM (final)",
+      "MAE": 28.409936722159372,
+      "RMSE": 43.89685070394097,
+      "MAPE_%": 1.1553629563506873
+    },
+    {
+      "fold": "test 2025-10",
+      "model": "Naive (equipment rpm)",
+      "MAE": 172.98452659992657,
+      "RMSE": 257.5731259728197,
+      "MAPE_%": 8.095395488809668
+    },
+    {
+      "fold": "test 2025-10",
+      "model": "Ridge",
+      "MAE": 57.4695745613935,
+      "RMSE": 77.51946062942741,
+      "MAPE_%": 2.988052775803474
+    },
+    {
+      "fold": "test 2025-10",
+      "model": "LightGBM + market_index",
+      "MAE": 60.58887129100524,
+      "RMSE": 86.49829530194218,
+      "MAPE_%": 2.598887337378032
+    },
+    {
+      "fold": "test 2025-10",
+      "model": "LightGBM (final)",
+      "MAE": 33.33515027792368,
+      "RMSE": 51.50238432415538,
+      "MAPE_%": 1.3862891124815753
+    }
+  ],
+  "mean": [
+    {
+      "model": "Naive (equipment rpm)",
+      "MAE": 175.413,
+      "RMSE": 258.804,
+      "MAPE_%": 8.094
+    },
+    {
+      "model": "Ridge",
+      "MAE": 54.901,
+      "RMSE": 78.036,
+      "MAPE_%": 2.707
+    },
+    {
+      "model": "LightGBM + market_index",
+      "MAE": 61.746,
+      "RMSE": 88.618,
+      "MAPE_%": 2.701
+    },
+    {
+      "model": "LightGBM (final)",
+      "MAE": 30.873,
+      "RMSE": 47.7,
+      "MAPE_%": 1.271
+    }
+  ],
+  "feature_importance_pct": {
+    "weight_per_mile": 38.55,
+    "equipment": 24.86,
+    "quote_signal": 20.9,
+    "distance": 10.56,
+    "delta_lon": 0.89,
+    "weight": 0.83,
+    "pickup_lat": 0.72,
+    "circuity": 0.71,
+    "delivery_lat": 0.69,
+    "pickup_lon": 0.42,
+    "delivery_lon": 0.39,
+    "dayofweek": 0.29,
+    "delta_lat": 0.17,
+    "is_weekend": 0.02,
+    "weight_missing": 0.0,
+    "market_index_missing": 0.0,
+    "weight_was_negative": 0.0
+  },
+  "final_n_estimators": 941
+}
