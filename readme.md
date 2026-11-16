@@ -65,6 +65,45 @@ averaged early-stopping round count.
 
 ![Feature importance](reports/figures/feature_importance.png)
 
+### Follow-up experiments
+
+A second round tested whether simple additions could improve on the final model. Each variant was
+scored on the same July–October folds with a fixed 440 trees, and again with a one-month gap between
+training and test, which mimics predicting December from data that ends in October. Values are mean
+MAE over the four folds.
+
+| Variant | Next month | One-month gap |
+|---|---|---|
+| **Final model (fixed 440 trees)** | **$47.13** | **$50.91** |
+| Drop `weight_per_mile` | $47.11 | $51.03 |
+| Add pickup / delivery city as categorical features | $47.22 | $51.12 |
+| Blend 75% LightGBM + 25% Ridge | $47.72 | $51.38 |
+| Blend 50% LightGBM + 50% Ridge | $49.95 | $53.46 |
+| Recency weighting, 120-day decay | $47.91 | $51.89 |
+| Recency weighting, 60-day decay | $51.96 | $57.43 |
+| Level multiplier: last 60 days' level + `market_index` | $49.68 | $51.01 |
+| Level multiplier: `market_index` only | $66.06 | $77.19 |
+| Level multiplier: `market_index` + quarter-end + trend | $52.34 | $80.72 |
+| Quarter-end progress as a LightGBM feature | $59.29 | $60.10 |
+
+- **Nothing beats the final model.** The closest variants tie it within $0.25 and the rest are worse.
+  Corrections that help one month hurt another: the `market_index` multiplier takes July from $64 to
+  $45 but September from $44 to $105.
+- **Little is left to gain.** If each day's overall price level were known exactly, MAE would still be
+  about $35.50, because the rest is load-level noise. The model already scores $39–41 in August and
+  October.
+- **The link between `market_index` and the price level is unstable.** Its fitted strength ranges from
+  0.03 to 0.18 depending on the training months and the other terms in the fit, so no multiplier built
+  on it holds up out of time.
+- **Quarter-end months ramp up.** The price level rises about 3–5% through March, June and September
+  and then falls back, most strongly for Flatbed. December is also a quarter-end, so the same may
+  happen there. Every way of using the pattern made the backtest worse, including on September itself
+  ($45–73 against $44), because the ramp cannot be separated from each month's different base level.
+  It is not modelled.
+- **`weight_per_mile` and city names add no information.** Dropping `weight_per_mile` leaves the error
+  unchanged ($47.11), so the model recovers it from weight and distance. City categories add nothing
+  beyond lat/lon.
+
 ## Running it
 
 Requires Python 3.11+.
